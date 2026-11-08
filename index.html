@@ -32,6 +32,15 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .card h2{font-family:var(--f-display);font-size:21px;margin:0;font-weight:700}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .full{grid-column:1/-1}
+.tload{display:flex;flex-direction:column;gap:10px;border:1px solid var(--line);border-radius:14px;padding:12px}
+.tload h3{margin:0;font-size:15px}
+.tqty{display:grid;grid-template-columns:56px 1fr 72px;gap:8px;align-items:center}
+.tqty b{font-size:30px;text-align:center;font-family:var(--f-display)}.tqty b span{font-size:15px;color:var(--muted);margin-left:4px}
+.tqty button{min-height:48px;border-radius:10px;background:var(--bg);border:1px solid var(--line);font-size:20px;font-weight:700}
+.tqty button[data-tq="0"]{font-size:14px;font-weight:600}
+.tl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.tl li{display:flex;align-items:center;gap:8px;background:var(--soft);border-radius:10px;padding:8px 10px}
+.tl li .n{flex:1}.tload .seg button{font-size:14px;padding:9px 4px;min-width:0}.tl li button{width:36px;height:36px;border-radius:9px;background:var(--surface);border:1px solid var(--line);font-weight:700}
 label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);font-weight:500;min-width:0}
 input,select{font:inherit;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 11px;width:100%;min-width:0;box-sizing:border-box}
 .check{display:flex;align-items:center;gap:8px;font-size:15px}
@@ -314,12 +323,12 @@ nav.tabs a[aria-current="page"]{color:var(--accent);border-top-color:var(--accen
         <label class="photo" for="t-photo"><input id="t-photo" type="file" accept="image/*" capture="environment" style="position:absolute;opacity:0;width:1px;height:1px">
           <span id="t-ph" style="display:flex;flex-direction:column;align-items:center;gap:6px"><span class="cam"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>Take photo of the loaded material<small style="font-weight:500">फोटो लें</small></span>
           <img id="t-prev" alt="Photo of loaded material" hidden></label>
+        <div class="tload" id="t-load"></div>
         <div class="grid">
           <label class="f" for="t-truck">Truck number<input id="t-truck" autocapitalize="characters" placeholder="MP 13 GA 4521"></label>
           <label class="f" for="t-driver">Driver name<input id="t-driver" autocomplete="off"></label>
           <label class="f full" for="t-phone">Driver mobile number<input id="t-phone" type="tel" inputmode="tel" maxlength="14" placeholder="98260 00000"></label>
           <label class="f full" for="t-by">Your name · आपका नाम<input id="t-by" autocomplete="name"></label>
-          <label class="f full" for="t-note">Note (optional)<input id="t-note" placeholder="e.g. 200 bags cement, Zig-Zag Red 3000"></label>
         </div>
         <div class="err" id="t-err" hidden></div>
         <button class="primary" type="button" id="t-save">Save truck check</button>
@@ -1019,6 +1028,37 @@ try{$("#t-by").value=localStorage.getItem("pc-name")||""}catch(e){}
 function shrink(file,max,q){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{const k=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);c.toBlob(b=>b?res(b):rej(new Error("photo")),"image/jpeg",q);URL.revokeObjectURL(img.src)};img.onerror=()=>rej(new Error("photo"));img.src=URL.createObjectURL(file)})}
 const blobToDataURL=b=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(b)});
 const blobToB64=async b=>(await blobToDataURL(b)).split(",")[1];
+// what's on the truck: tap the item, its colour / size, and the quantity; no typing
+let tLoad=[],tKey="zigzag",tSub="Grey",tQty=0;
+const tGroup=m=>m.bkey||(m.id.indexOf("colour_")===0?"colour":m.id);
+const T_GROUPS=[...new Set(MATS.map(tGroup))].map(g=>({g,ms:MATS.filter(m=>tGroup(m)===g)}));
+const tVar=m=>m.sub||m.col||"";
+function tCur(){const grp=T_GROUPS.find(x=>x.g===tKey)||T_GROUPS[0];return {grp,sel:grp.ms.find(m=>tVar(m)===tSub)||grp.ms[0]}}
+const tLine=l=>{const m=matById[l.id];return `${m.en} ${fmt(l.qty)} ${m.unit}`};
+function renderLoad(){
+  const {grp,sel}=tCur(),qs=[1,5,10,50].map(k=>r2(sel.step*k));
+  $("#t-load").innerHTML=`<h3>What's on the truck? · ट्रक में क्या है?</h3>
+    <div class="tgrid">${T_GROUPS.filter(x=>x.ms[0].block).map(x=>`<button type="button" class="tile" data-tk="${x.g}" aria-pressed="${x===grp}">${shape(x.ms[0].block,x===grp&&sel.col?sel.col:"Grey")}<span class="tn">${x.ms[0].en.split(" – ")[0].replace(" 8×8 in","")}</span></button>`).join("")}</div>
+    <div class="seg">${T_GROUPS.filter(x=>!x.ms[0].block).map(x=>`<button type="button" data-tk="${x.g}" aria-pressed="${x===grp}">${x.g==="colour"?"Colour":x.ms[0].en}</button>`).join("")}</div>
+    ${grp.ms.length>1?`<div class="seg">${grp.ms.map(m=>`<button type="button" data-ts="${tVar(m)}" aria-pressed="${m===sel}">${sw(m.col)}${tVar(m)}</button>`).join("")}</div>`:""}
+    <div class="tqty"><button type="button" data-tq="-" aria-label="Less">−</button><b>${fmt(tQty)}<span>${sel.unit}</span></b><button type="button" data-tq="0">Clear</button></div>
+    <div class="seg">${qs.map(q=>`<button type="button" data-tq="${q}">+${fmt(q)}</button>`).join("")}</div>
+    <button class="soft" type="button" data-tadd ${tQty>0?"":"disabled"}>${tQty>0?`Add ${fmt(tQty)} ${sel.unit} ${esc(sel.en)}`:"Pick the quantity, then add"}</button>
+    ${tLoad.length?`<ul class="tl">${tLoad.map((l,i)=>{const m=matById[l.id];return `<li>${sw(m.col)}<span class="n">${esc(m.en)}</span><b>${fmt(l.qty)} ${m.unit}</b><button type="button" data-trm="${i}" aria-label="Remove ${esc(m.en)}">✕</button></li>`}).join("")}</ul>`:""}`;
+}
+function tAddCurrent(){const {sel}=tCur();if(!(tQty>0))return false;const ex=tLoad.find(l=>l.id===sel.id);
+  if(ex)ex.qty=r2(ex.qty+tQty);else tLoad.push({id:sel.id,qty:tQty});tQty=0;return true}
+$("#t-load").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;const {sel}=tCur();
+  if(b.dataset.tk){if(b.dataset.tk!==tKey){tKey=b.dataset.tk;tQty=0}}
+  else if(b.dataset.ts!=null)tSub=b.dataset.ts;
+  else if(b.dataset.tq==="-")tQty=r2(Math.max(0,tQty-sel.step));
+  else if(b.dataset.tq==="0")tQty=0;
+  else if(b.dataset.tq)tQty=r2(tQty+(+b.dataset.tq));
+  else if(b.hasAttribute("data-tadd")){if(tAddCurrent())toast("Added to the list")}
+  else if(b.dataset.trm!=null)tLoad.splice(+b.dataset.trm,1);
+  else return;
+  renderLoad()});
+renderLoad();
 $("#t-photo").addEventListener("change",e=>{tFile=e.target.files[0]||null;const im=$("#t-prev");
   if(tFile){im.src=URL.createObjectURL(tFile);im.hidden=false;$("#t-ph").hidden=true}else{im.hidden=true;$("#t-ph").hidden=false}});
 async function storeTruck(rec,full,thumb){
@@ -1029,21 +1069,23 @@ async function storeTruck(rec,full,thumb){
 }
 $("#t-save").onclick=async()=>{
   if(tBusy)return;err("#t-err");
-  const rec={dir:tDir,truck:$("#t-truck").value.trim().toUpperCase(),driver:$("#t-driver").value.trim(),phone:$("#t-phone").value.replace(/[^\d+]/g,""),by:$("#t-by").value.trim(),note:$("#t-note").value.trim(),at:Date.now()};
+  if(tQty>0){tAddCurrent();renderLoad()}
+  const rec={dir:tDir,truck:$("#t-truck").value.trim().toUpperCase(),driver:$("#t-driver").value.trim(),phone:$("#t-phone").value.replace(/[^\d+]/g,""),by:$("#t-by").value.trim(),note:tLoad.map(tLine).join(", "),items:tLoad.map(l=>({...l})),at:Date.now()};
   if(!tFile)return err("#t-err","Take a photo of the loaded material first.");
+  if(!tLoad.length)return err("#t-err","Pick what is on the truck and how much, then tap Add.");
   if(!rec.truck)return err("#t-err","Enter the truck number.");
   if(!rec.driver)return err("#t-err","Enter the driver's name.");
   if(rec.phone.replace(/\D/g,"").length<10)return err("#t-err","Enter the driver's 10-digit mobile number.");
   if(!rec.by)return err("#t-err","Enter your own name.");
   if(!db)return err("#t-err","Not connected. Check the internet and try again.");
-  if(!await ask(`Save truck ${rec.truck}?`,"ट्रक चेक सेव करें?",`${rec.dir} · Driver ${rec.driver} (${rec.phone}) · Checked by ${rec.by}`))return;
+  if(!await ask(`Save truck ${rec.truck}?`,"ट्रक चेक सेव करें?",`${rec.dir}: ${rec.note} · Driver ${rec.driver} (${rec.phone}) · Checked by ${rec.by}`))return;
   tBusy=true;const btn=$("#t-save");btn.disabled=true;btn.textContent="Saving…";
   try{
     const full=await shrink(tFile,1400,0.82);let thumb=await shrink(tFile,240,0.7);
     if(thumb.size>30000)thumb=await shrink(tFile,180,0.6);
     await storeTruck(rec,full,thumb);
     try{localStorage.setItem("pc-name",rec.by)}catch(e){}
-    tFile=null;$("#t-photo").value="";$("#t-prev").hidden=true;$("#t-ph").hidden=false;["t-truck","t-driver","t-phone","t-note"].forEach(id=>$("#"+id).value="");
+    tFile=null;$("#t-photo").value="";$("#t-prev").hidden=true;$("#t-ph").hidden=false;["t-truck","t-driver","t-phone"].forEach(id=>$("#"+id).value="");tLoad=[];tQty=0;renderLoad();
     toast(`Truck ${rec.truck} saved`);
   }catch(e){err("#t-err",e?.code==="invalid_argument"?"You can view truck checks but not add them. Ask the owner for Contributor access.":"Couldn't save. Check the internet and try again.")}
   finally{tBusy=false;btn.disabled=false;btn.textContent="Save truck check"}
