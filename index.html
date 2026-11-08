@@ -1043,7 +1043,9 @@ function applyState(st){
 const localState=()=>({trucks,stock,log:slog,invoices,quotes,customers,clients,firm,qdef});
 function saveCache(){try{localStorage.setItem("pc-state",JSON.stringify(localState()))}catch(e){try{localStorage.setItem("pc-state",JSON.stringify({...localState(),trucks:trucks.map(t=>({...t,thumb:""}))}))}catch(x){}}}
 function loadCached(){try{const c=JSON.parse(localStorage.getItem("pc-state")||"null");if(c){applyState(c);return true}}catch(e){}return false}
-async function refresh(){if(!PIN||OUT.length)return;try{const st=await api("getState");if(!OUT.length)applyState(st)}catch(e){if(!/WRONG_PIN|LOCKED/.test(pinErr(e)))setStatus("err","Can't reach the sheet. Check internet.")}}
+let lastJ="";
+async function refresh(){if(!PIN||OUT.length)return;try{const st=await api("getState");if(OUT.length)return;
+  const j=JSON.stringify(st);if(j===lastJ){showOut();return}lastJ=j;applyState(st)}catch(e){if(!/WRONG_PIN|LOCKED/.test(pinErr(e)))setStatus("err","Can't reach the sheet. Check internet.")}}
 function showLock(msg){PIN="";try{localStorage.removeItem("pc-pin");localStorage.removeItem("pc-state")}catch(e){}
   $("#lock").hidden=false;err("#lock-err",msg||"");$("#lock-pin").value="";setTimeout(()=>$("#lock-pin").focus(),60)}
 $("#lock-form").addEventListener("submit",async e=>{
@@ -1079,6 +1081,10 @@ $("#s-who").value=me;$("#s-who").addEventListener("change",e=>{me=e.target.value
 if(PIN){if(loadCached()&&!OUT.length)setStatus("busy","Updating…");if(OUT.length)runOut();else refresh()}else showLock("");
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&PIN){if(OUT.length)runOut();else refresh()}});
 window.addEventListener("online",()=>{if(PIN)runOut()});
+// every 30 s, fetch changes typed into the Google Sheet (not while someone is typing or answering Yes/No)
+setInterval(()=>{if(document.hidden||!PIN||OUT.length||!$("#ask").hidden||!$("#lock").hidden)return;
+  const a=document.activeElement;if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))return;
+  if(/settings/.test(location.hash))return;refresh()},30000);
 window.addEventListener("beforeunload",e=>{if(OUT.length){e.preventDefault();e.returnValue=""}});
 setTimeout(()=>{if(PIN){tpl("invoice").catch(()=>{});tpl("quote").catch(()=>{})}},5000);
 
