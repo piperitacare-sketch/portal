@@ -602,6 +602,9 @@ const slug=s=>(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,
 const docId=no=>no.replace(/[^A-Za-z0-9_\-.]/g,"-");
 let db=true,me="",names={};
 let PIN="";try{PIN=localStorage.getItem("pc-pin")||""}catch(e){}
+const PIN_HOURS=12,PIN_AGAIN="For safety the PIN is asked again every 12 hours. · हर 12 घंटे में पिन दोबारा डालें।";
+function pinExpired(){let at=0;try{at=+localStorage.getItem("pc-pin-at")||0}catch(e){}return !at||Date.now()-at>PIN_HOURS*36e5}
+let pinTimedOut=false;if(PIN&&pinExpired()){PIN="";pinTimedOut=true;try{localStorage.removeItem("pc-pin")}catch(e){}}
 const pinErr=e=>String(e&&e.message||e);
 const API_URL="https://script.google.com/macros/s/AKfycbyEROk5KDzS52l9rjqX9tGhD8t1DIZglFLszF8WP6CebxTutg2oFWVtXYBbXOy7boaCyw/exec";
 async function api(fn,...args){
@@ -1053,7 +1056,7 @@ $("#lock-form").addEventListener("submit",async e=>{
   if(!/^\d{4,6}$/.test(p))return err("#lock-err","Enter the 4-digit PIN.");
   const go=$("#lock-go");go.disabled=true;go.textContent="Checking…";err("#lock-err");
   PIN=p;
-  try{await api("checkPin");try{localStorage.setItem("pc-pin",p)}catch(x){}
+  try{await api("checkPin");try{localStorage.setItem("pc-pin",p);localStorage.setItem("pc-pin-at",String(Date.now()))}catch(x){}
     $("#lock").hidden=true;$("#lock-pin").value="";if(OUT.length)runOut();else await refresh()}
   catch(x){PIN="";const m=pinErr(x);
     err("#lock-err",/LOCKED/.test(m)?"Too many wrong tries. Wait 10 minutes, then try again.":/WRONG_PIN/.test(m)?"Wrong PIN. Try again.":"Can't reach the sheet. Check internet.");
@@ -1078,8 +1081,9 @@ $("#lock-now").onclick=()=>showLock("");
 function showBackup(t){$("#bk-info").textContent=t?"Last backup: "+new Date(t).toLocaleString("en-IN",{day:"numeric",month:"short",year:"numeric",hour:"numeric",minute:"2-digit"})+". A new copy is saved every Sunday night.":"No backup yet. A copy is saved every Sunday night."}
 try{me=localStorage.getItem("pc-name")||""}catch(e){}
 $("#s-who").value=me;$("#s-who").addEventListener("change",e=>{me=e.target.value.trim();try{localStorage.setItem("pc-name",me)}catch(x){}});
-if(PIN){if(loadCached()&&!OUT.length)setStatus("busy","Updating…");if(OUT.length)runOut();else refresh()}else showLock("");
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&PIN){if(OUT.length)runOut();else refresh()}});
+if(PIN){if(loadCached()&&!OUT.length)setStatus("busy","Updating…");if(OUT.length)runOut();else refresh()}else showLock(pinTimedOut?PIN_AGAIN:"");
+setInterval(()=>{if(PIN&&pinExpired())showLock(PIN_AGAIN)},60000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&PIN&&pinExpired()){showLock(PIN_AGAIN);return}if(!document.hidden&&PIN){if(OUT.length)runOut();else refresh()}});
 window.addEventListener("online",()=>{if(PIN)runOut()});
 // every 30 s, fetch changes typed into the Google Sheet (not while someone is typing or answering Yes/No)
 setInterval(()=>{if(document.hidden||!PIN||OUT.length||!$("#ask").hidden||!$("#lock").hidden)return;
