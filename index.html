@@ -24,7 +24,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16
 .brand{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
 h1{font-family:var(--f-display);font-size:32px;line-height:1;margin:4px 0 0;font-weight:700}
 .status{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;margin-top:6px}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--muted)} .dot.live{background:var(--ok)} .dot.err{background:var(--danger)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted)} .dot.live{background:var(--ok)} .dot.err{background:var(--danger)} .dot.busy{background:#E0A800}
 button{font:inherit;cursor:pointer;border:none;background:none;color:inherit;-webkit-tap-highlight-color:transparent}
 button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .link{color:var(--accent);font-weight:600;font-size:15px;padding:6px 0}
@@ -141,6 +141,13 @@ nav.tabs a small{font-size:12px;font-weight:500}
 nav.tabs a[aria-current="page"]{color:var(--accent);border-top-color:var(--accent)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:12px 16px;border-radius:12px;max-width:calc(100% - 32px);font-weight:500;z-index:20;display:flex;gap:14px;align-items:center}
 .toast button{color:var(--accent);font-weight:700}
+.ask{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.45);display:grid;place-items:end center;padding:16px;padding-bottom:max(16px,env(safe-area-inset-bottom,0px))}
+.ask-card{width:min(440px,100%);background:var(--surface);border-radius:20px;padding:22px 18px 18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.ask-t{font-size:21px;font-weight:700;line-height:1.3}
+.ask-h{font-size:18px;color:var(--fg)}
+.ask-s{color:var(--muted);font-size:15px}
+.ask-b{display:grid;grid-template-columns:1fr 1.4fr;gap:10px;margin-top:8px}
+.ask-b button{min-height:52px;font-size:17px}
 @media (max-width:370px){.grid{grid-template-columns:1fr}}
 .lock{position:fixed;inset:0;z-index:60;background:var(--bg);display:grid;place-items:center;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .lock-card{width:min(340px,100%);display:flex;flex-direction:column;gap:14px;text-align:center}
@@ -372,6 +379,10 @@ nav.tabs a[aria-current="page"]{color:var(--accent);border-top-color:var(--accen
 </div>
 
 <div class="toast" id="toast" hidden></div>
+<div class="ask" id="ask" hidden role="dialog" aria-modal="true" aria-labelledby="ask-t"><div class="ask-card">
+  <div class="ask-t" id="ask-t"></div><div class="ask-h" id="ask-h"></div><div class="ask-s" id="ask-s"></div>
+  <div class="ask-b"><button class="soft" type="button" id="ask-no">नहीं · No</button><button class="primary" type="button" id="ask-yes">हाँ · Yes</button></div>
+</div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -606,6 +617,13 @@ async function api(fn,...args){
   throw new Error(m);
 }
 let toastT;
+function ask(title,hindi,sub){return new Promise(res=>{const box=$("#ask");
+  $("#ask-t").textContent=title;$("#ask-h").textContent=hindi||"";$("#ask-h").hidden=!hindi;$("#ask-s").textContent=sub||"";$("#ask-s").hidden=!sub;
+  const done=v=>{box.hidden=true;$("#ask-yes").onclick=$("#ask-no").onclick=box.onclick=null;document.removeEventListener("keydown",key);res(v)};
+  const key=e=>{if(e.key==="Escape")done(false)};
+  $("#ask-yes").onclick=()=>done(true);$("#ask-no").onclick=()=>done(false);box.onclick=e=>{if(e.target===box)done(false)};
+  document.addEventListener("keydown",key);box.hidden=false;setTimeout(()=>$("#ask-yes").focus(),30)})}
+const rupees=n=>"₹"+(+n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
 function toast(msg,undo){const t=$("#toast");t.innerHTML="";const s=document.createElement("span");s.textContent=msg;t.appendChild(s);
   if(undo){const b=document.createElement("button");b.type="button";b.textContent="Undo";b.onclick=()=>{t.hidden=true;undo()};t.appendChild(b)}
   t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,undo?6000:4000)}
@@ -615,7 +633,13 @@ async function saveFile(filename,data){
     setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},3000);return true}catch(e){toast("Couldn't save the file.");return false}
 }
 function b64buf(b64){const s=atob(b64||"");const u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u.buffer}
-const TPL={};async function tpl(k){if(!TPL[k])TPL[k]=b64buf(await api("getTemplate",k));return TPL[k].slice(0)}
+const TPL={};
+function tpl(k){
+  if(!TPL[k])TPL[k]=(async()=>{let b64=null;
+    try{const c=JSON.parse(localStorage.getItem("pc-tpl-"+k)||"null");if(c&&Date.now()-c.t<7*864e5)b64=c.d}catch(e){}
+    if(!b64){b64=await api("getTemplate",k);try{localStorage.setItem("pc-tpl-"+k,JSON.stringify({t:Date.now(),d:b64}))}catch(e){}}
+    return b64buf(b64)})().catch(e=>{delete TPL[k];throw e});
+  return TPL[k].then(b=>b.slice(0))}
 const TYPES=["Zig-Zag","Cosmic","Square","Kerb Stone"];
 const THICK=["60","80","100"],GRADES=["M30","M35","M40"],COLOURS=["Red","Yellow","Grey"];
 const COLOUR_HEX={Red:"#B03A2E",Yellow:"#E0A800",Grey:"#8A8D8F"};
@@ -660,6 +684,7 @@ function renderSettings(){
   $("#st-prep").value=qdef.preparedBy||"";$("#st-valid").value=qdef.validDays??15;$("#st-deliv").value=qdef.delivery||"";$("#st-pay").value=qdef.payment||"";
 }
 $("#st-save").onclick=async()=>{
+  if(!await ask("Save settings?","सेटिंग्स सेव करें?","Bank details and invoice/quotation defaults will change for everyone."))return;
   const f={bank:$("#st-bank").value.trim(),acno:$("#st-acno").value.trim(),ifsc:$("#st-ifsc").value.trim().toUpperCase(),upi:$("#st-upi").value.trim(),
     days:+$("#st-days").value||0,interest:+$("#st-int").value||0,gstRate:+$("#st-gst").value||18,hsn:$("#st-hsn").value.trim()||"6810"};
   const q={preparedBy:$("#st-prep").value.trim(),validDays:+$("#st-valid").value||15,gstRate:f.gstRate,delivery:$("#st-deliv").value.trim(),payment:$("#st-pay").value.trim()};
@@ -728,18 +753,32 @@ async function renderLog(){
     return `<li><span class="a">${esc(m.en)} · ${k}</span><span class="b ${e.kind==="count"?"":e.change<0?"neg":"pos"}">${e.change>0?"+":e.change<0?"−":""}${fmt(Math.abs(e.change))} ${m.unit}</span>
       <span class="c">${when(e.at)}${e.by?" · "+esc(e.by):""}</span><span class="d">left ${fmt(e.after)}</span></li>`}).join("");
 }
-async function record(id,delta,kind,newLow){
-  if(!db){toast("Not connected. Open the page in Claude to save entries.");return false}
-  if(sbusy)return false;sbusy=true;
-  const m=matById[id],before=qty(id),after=r2(before+delta);
-  if(after<0){toast(`Only ${fmt(before)} ${m.unit} of ${m.en} in stock.`);sbusy=false;return false}
-  const body={qty:after,updatedAt:Date.now()};if(newLow!=null)body.low=newLow;
+let OUT=[];try{OUT=JSON.parse(localStorage.getItem("pc-out")||"[]")}catch(e){}
+const saveOut=()=>{try{localStorage.setItem("pc-out",JSON.stringify(OUT))}catch(e){}};
+function showOut(){if(OUT.length)setStatus("busy","Saving "+OUT.length+(OUT.length>1?" entries…":" entry…"));else setStatus("live","Saved to Google Sheet")}
+let outRun=false;
+async function runOut(){
+  if(outRun||!PIN)return;outRun=true;let netFail=false;
   try{
-    const r=await api("recordStock",id,r2(delta),kind,newLow==null?null:newLow,me);
-    if(r.error){toast(r.error);return false}
-    applyState(r.state);return true;
-  }catch(e){toast("Couldn't save. Check the internet and try again.");return false}
-  finally{sbusy=false}
+    while(OUT.length){showOut();const j=OUT[0];let r;
+      try{r=await api(j.fn,...j.args)}catch(e){if(!/WRONG_PIN|LOCKED/.test(pinErr(e)))netFail=true;break}
+      OUT.shift();saveOut();
+      if(r&&r.error)toast("Not saved: "+r.error);
+      else if(r&&r.stock&&!OUT.length){Object.assign(stock,r.stock);if(!fixing)renderStock();saveCache()}
+    }
+  }finally{outRun=false}
+  if(netFail){setStatus("err","Not saved yet – no internet. Trying again…");setTimeout(runOut,8000);return}
+  if(!OUT.length){showOut();refresh()}
+}
+async function record(id,delta,kind,newLow){
+  if(!PIN){showLock("");return false}
+  const m=matById[id],before=qty(id),after=r2(before+delta);
+  if(after<0){toast(`Only ${fmt(before)} ${m.unit} of ${m.en} in stock.`);return false}
+  stock[id]={...(stock[id]||{}),qty:after,updatedAt:Date.now()};if(newLow!=null)stock[id].low=newLow;
+  if(r2(delta))slog=[{at:Date.now(),item:id,change:r2(delta),after,kind,by:me},...slog];
+  OUT.push({fn:"recordStock",args:[id,r2(delta),kind,newLow==null?null:newLow,me,true]});saveOut();
+  if(!fixing)renderStock();renderLog();renderHome();saveCache();
+  runOut();return true;
 }
 $("#s-cards").addEventListener("click",async e=>{
   const tile=e.target.closest("[data-sel]");if(tile){selType=tile.dataset.sel;fixing=null;renderStock();return}
@@ -748,11 +787,15 @@ $("#s-cards").addEventListener("click",async e=>{
   const inp=$("#s-amt-"+id),v=()=>{const x=parseFloat(inp.value);return isFinite(x)&&x>0?x:0};
   if(a==="inc"||a==="dec"){samt[id]=r2(Math.max(0,v()+(a==="inc"?m.step:-m.step)));inp.value=samt[id];return}
   if(a==="use"||a==="rec"){const x=v();if(!x){toast("Enter how much first.");return}const d=a==="use"?-x:x;
+    const after=r2(qty(id)+d);if(after<0){toast(`Only ${fmt(qty(id))} ${m.unit} of ${m.en} in stock.`);return}
+    const what=a==="rec"?(m.block?"Made":"Received"):(m.block?"Dispatched":"Used");
+    if(!await ask(`${a==="rec"?"Add":"Remove"} ${fmt(x)} ${m.unit} ${m.en}?`,`${fmt(x)} ${m.unit} ${m.hi}${m.col&&m.block?" ("+m.col+")":""} ${a==="rec"?"जोड़ें":"घटाएँ"}?`,`${what}. Stock will be ${fmt(after)} ${m.unit}.`))return;
     if(await record(id,d,a==="use"?"used":"received"))toast(`${a==="use"?"Used":"Received"} ${fmt(x)} ${m.unit} ${m.en}`,()=>record(id,-d,a==="use"?"received":"used"));return}
   if(a==="fix"){fixing=id;renderStock();return}
   if(a==="cancel"){fixing=null;renderStock();return}
   if(a==="save"){const nq=parseFloat($("#s-fq-"+id).value),nl=parseFloat($("#s-fl-"+id).value);
     if(!(nq>=0)||!(nl>=0)){toast("Enter numbers of 0 or more.");return}
+    if(!await ask(`Set ${m.en} to ${fmt(nq)} ${m.unit}?`,`${m.hi} का स्टॉक ${fmt(nq)} ${m.unit} करें?`,`Now ${fmt(qty(id))} ${m.unit}. Alert when below ${fmt(nl)} ${m.unit}.`))return;
     if(await record(id,r2(nq-qty(id)),"count",nl)){fixing=null;renderStock();toast(`${m.en} set to ${fmt(nq)} ${m.unit}`)}}
 });
 $("#s-cards").addEventListener("input",e=>{const x=e.target.id.match(/^s-amt-(.+)$/);if(x)samt[x[1]]=e.target.value});
@@ -850,10 +893,15 @@ $("#b-create").onclick=async()=>{
   if(t.items.some(it=>!(+it.rate>0)))return err("#b-err","Enter a rate for every item.");
   if(!o.invNo)return err("#b-err","Enter an invoice number (under More details).");
   if(o.buyer.gstin&&!/^\d{2}[A-Z0-9]{13}$/.test(o.buyer.gstin))return err("#b-err","GSTIN should be 15 characters, starting with the 2-digit state code.");
+  if(!await ask(`Create invoice for ${o.buyer.name}?`,"बिल बनाएँ?",`${o.invNo} · ${t.items.length} item${t.items.length>1?"s":""} · Total ${rupees(t.grand)}`))return;
   bBusy=true;const btn=$("#b-create");btn.disabled=true;btn.textContent="Creating…";
   try{
-    {const r=await api("saveInvoice",JSON.stringify({...o,settings:{...firm},grand:t.grand,taxable:t.taxable,tax:r2(t.cgst+t.sgst+t.igst),createdAt:Date.now()}),!bExample);
-      if(r.error)return err("#b-err",r.error);applyState(r.state)}
+    {const rec={...o,settings:{...firm},grand:t.grand,taxable:t.taxable,tax:r2(t.cgst+t.sgst+t.igst),createdAt:Date.now()};
+      tpl("invoice").catch(()=>{});
+      const r=await api("saveInvoice",JSON.stringify(rec),!bExample,true);
+      if(r.error)return err("#b-err",r.error);
+      invoices=[rec,...invoices.filter(x=>x.invNo!==rec.invNo)];if(!bExample&&o.buyer&&o.buyer.name)customers[slug(o.buyer.name)]=o.buyer;
+      applyState(localState());setTimeout(refresh,500)}
     const ok=await bDownload(o);toast(ok?`Invoice ${o.invNo} saved and downloaded`:`Invoice ${o.invNo} saved`);bNumTouched=false;
   }catch(e){err("#b-err",e?.code==="invalid_argument"?"You can view invoices but not create them. Ask the owner for Contributor access.":"Couldn't create the invoice. Check the internet and try again.")}
   finally{bBusy=false;btn.disabled=false;btn.textContent="Create invoice"}
@@ -904,10 +952,15 @@ $("#q-create").onclick=async()=>{
   if(!t.items.length)return err("#q-err","Add at least one item with a quantity.");
   if(t.items.some(it=>!(+it.rate>0)))return err("#q-err","Enter a rate for every item.");
   if(!q.qtNo)return err("#q-err","Enter a quotation number (under More details).");
+  if(!await ask(`Create quotation for ${q.client.company||q.client.name}?`,"कोटेशन बनाएँ?",`${q.qtNo} · ${t.items.length} item${t.items.length>1?"s":""} · Total ${rupees(t.grand)}`))return;
   qBusy=true;const btn=$("#q-create");btn.disabled=true;btn.textContent="Creating…";
   try{
-    {const r=await api("saveQuotation",JSON.stringify({...q,grand:t.grand,createdAt:Date.now()}),!qExample);
-      if(r.error)return err("#q-err",r.error);applyState(r.state)}
+    {const rec={...q,grand:t.grand,createdAt:Date.now()};
+      tpl("quote").catch(()=>{});
+      const r=await api("saveQuotation",JSON.stringify(rec),!qExample,true);
+      if(r.error)return err("#q-err",r.error);
+      quotes=[rec,...quotes.filter(x=>x.qtNo!==rec.qtNo)];if(!qExample&&q.client&&q.client.name)clients[slug(q.client.name)]=q.client;
+      applyState(localState());setTimeout(refresh,500)}
     const ok=await qDownload(q);toast(ok?`Quotation ${q.qtNo} saved and downloaded`:`Quotation ${q.qtNo} saved`);qNumTouched=false;
   }catch(e){err("#q-err",e?.code==="invalid_argument"?"You can view quotations but not create them. Ask the owner for Contributor access.":"Couldn't create the quotation. Check the internet and try again.")}
   finally{qBusy=false;btn.disabled=false;btn.textContent="Create quotation"}
@@ -940,8 +993,10 @@ const blobToB64=async b=>(await blobToDataURL(b)).split(",")[1];
 $("#t-photo").addEventListener("change",e=>{tFile=e.target.files[0]||null;const im=$("#t-prev");
   if(tFile){im.src=URL.createObjectURL(tFile);im.hidden=false;$("#t-ph").hidden=true}else{im.hidden=true;$("#t-ph").hidden=false}});
 async function storeTruck(rec,full,thumb){
-  const r=await api("saveTruck",JSON.stringify(rec),await blobToB64(full),await blobToDataURL(thumb));
-  if(r.error)throw new Error(r.error);applyState(r.state);
+  const td=await blobToDataURL(thumb);
+  const r=await api("saveTruck",JSON.stringify(rec),await blobToB64(full),td,true);
+  if(r.error)throw new Error(r.error);
+  trucks=[{...rec,photo:r.photo||"",thumb:td},...trucks];applyState(localState());setTimeout(refresh,500);
 }
 $("#t-save").onclick=async()=>{
   if(tBusy)return;err("#t-err");
@@ -952,6 +1007,7 @@ $("#t-save").onclick=async()=>{
   if(rec.phone.replace(/\D/g,"").length<10)return err("#t-err","Enter the driver's 10-digit mobile number.");
   if(!rec.by)return err("#t-err","Enter your own name.");
   if(!db)return err("#t-err","Not connected. Check the internet and try again.");
+  if(!await ask(`Save truck ${rec.truck}?`,"ट्रक चेक सेव करें?",`${rec.dir} · Driver ${rec.driver} (${rec.phone}) · Checked by ${rec.by}`))return;
   tBusy=true;const btn=$("#t-save");btn.disabled=true;btn.textContent="Saving…";
   try{
     const full=await shrink(tFile,1400,0.82);let thumb=await shrink(tFile,240,0.7);
@@ -982,10 +1038,13 @@ function applyState(st){
   if(!bNumTouched)bNextNo();if(!qNumTouched)qNextNo();renderBRecs();renderQRecs();renderHome();bUpdate();
   if(invoices.length&&bExample)bReset(false);if(quotes.length&&qExample)qReset(false);
   if(st.backup)showBackup(st.backup.last);
-  setStatus("live","Saved to Google Sheet");
+  saveCache();showOut();
 }
-async function refresh(){if(!PIN)return;try{applyState(await api("getState"))}catch(e){if(!/WRONG_PIN|LOCKED/.test(pinErr(e)))setStatus("err","Can't reach the sheet. Check internet.")}}
-function showLock(msg){PIN="";try{localStorage.removeItem("pc-pin")}catch(e){}
+const localState=()=>({trucks,stock,log:slog,invoices,quotes,customers,clients,firm,qdef});
+function saveCache(){try{localStorage.setItem("pc-state",JSON.stringify(localState()))}catch(e){try{localStorage.setItem("pc-state",JSON.stringify({...localState(),trucks:trucks.map(t=>({...t,thumb:""}))}))}catch(x){}}}
+function loadCached(){try{const c=JSON.parse(localStorage.getItem("pc-state")||"null");if(c){applyState(c);return true}}catch(e){}return false}
+async function refresh(){if(!PIN||OUT.length)return;try{const st=await api("getState");if(!OUT.length)applyState(st)}catch(e){if(!/WRONG_PIN|LOCKED/.test(pinErr(e)))setStatus("err","Can't reach the sheet. Check internet.")}}
+function showLock(msg){PIN="";try{localStorage.removeItem("pc-pin");localStorage.removeItem("pc-state")}catch(e){}
   $("#lock").hidden=false;err("#lock-err",msg||"");$("#lock-pin").value="";setTimeout(()=>$("#lock-pin").focus(),60)}
 $("#lock-form").addEventListener("submit",async e=>{
   e.preventDefault();const p=$("#lock-pin").value.trim();
@@ -993,7 +1052,7 @@ $("#lock-form").addEventListener("submit",async e=>{
   const go=$("#lock-go");go.disabled=true;go.textContent="Checking…";err("#lock-err");
   PIN=p;
   try{await api("checkPin");try{localStorage.setItem("pc-pin",p)}catch(x){}
-    $("#lock").hidden=true;$("#lock-pin").value="";await refresh()}
+    $("#lock").hidden=true;$("#lock-pin").value="";if(OUT.length)runOut();else await refresh()}
   catch(x){PIN="";const m=pinErr(x);
     err("#lock-err",/LOCKED/.test(m)?"Too many wrong tries. Wait 10 minutes, then try again.":/WRONG_PIN/.test(m)?"Wrong PIN. Try again.":"Can't reach the sheet. Check internet.");
     $("#lock-pin").value="";$("#lock-pin").focus()}
@@ -1003,12 +1062,13 @@ $("#pin-save").onclick=async()=>{
   const a=$("#pin-new").value.trim(),c=$("#pin-new2").value.trim();err("#pin-err");
   if(!/^\d{4,6}$/.test(a))return err("#pin-err","The new PIN must be 4 to 6 digits.");
   if(a!==c)return err("#pin-err","The two PINs don't match.");
+  if(!await ask("Change the PIN?","पिन बदलें?","Everyone will need the new PIN to open the app."))return;
   try{const r=await api("changePin",a);if(r.error)return err("#pin-err",r.error);
     PIN=a;try{localStorage.setItem("pc-pin",a)}catch(x){}
     $("#pin-new").value="";$("#pin-new2").value="";toast("PIN changed. Tell your staff the new PIN.")}
   catch(x){if(!/WRONG_PIN|LOCKED/.test(pinErr(x)))err("#pin-err","Couldn't change the PIN. Check internet.")}
 };
-$("#bk-now").onclick=async()=>{const btn=$("#bk-now");btn.disabled=true;btn.textContent="Backing up…";
+$("#bk-now").onclick=async()=>{if(!await ask("Make a backup now?","अभी बैकअप लें?","A copy of the sheet is saved to Google Drive."))return;const btn=$("#bk-now");btn.disabled=true;btn.textContent="Backing up…";
   try{const r=await api("backupNow");showBackup(r.last);toast("Backup saved to Google Drive")}
   catch(x){if(!/WRONG_PIN|LOCKED/.test(pinErr(x)))toast("Couldn't back up. Check internet.")}
   finally{btn.disabled=false;btn.textContent="Back up now"}};
@@ -1016,8 +1076,11 @@ $("#lock-now").onclick=()=>showLock("");
 function showBackup(t){$("#bk-info").textContent=t?"Last backup: "+new Date(t).toLocaleString("en-IN",{day:"numeric",month:"short",year:"numeric",hour:"numeric",minute:"2-digit"})+". A new copy is saved every Sunday night.":"No backup yet. A copy is saved every Sunday night."}
 try{me=localStorage.getItem("pc-name")||""}catch(e){}
 $("#s-who").value=me;$("#s-who").addEventListener("change",e=>{me=e.target.value.trim();try{localStorage.setItem("pc-name",me)}catch(x){}});
-if(PIN)refresh();else showLock("");
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&PIN)refresh()});
+if(PIN){if(loadCached()&&!OUT.length)setStatus("busy","Updating…");if(OUT.length)runOut();else refresh()}else showLock("");
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&PIN){if(OUT.length)runOut();else refresh()}});
+window.addEventListener("online",()=>{if(PIN)runOut()});
+window.addEventListener("beforeunload",e=>{if(OUT.length){e.preventDefault();e.returnValue=""}});
+setTimeout(()=>{if(PIN){tpl("invoice").catch(()=>{});tpl("quote").catch(()=>{})}},5000);
 
 </script>
 </body></html>
