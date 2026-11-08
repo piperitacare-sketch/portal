@@ -473,7 +473,21 @@ nav.tabs a[aria-current="page"]{color:var(--accent);border-top-color:var(--accen
   }
 
   const esc=s=>String(s).replace(/&/g,"&amp;").replace(/[<]/g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-  function fillXml(xml,map){ return xml.replace(/\{\{([A-Z_0-9]+)\}\}/g,(m,k)=>k in map?esc(map[k]):""); }
+  // Google Docs (used to make the PDF) joins two tables that touch into one; a hair-thin empty line keeps them apart.
+  const GAP='<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr></w:p>';
+  const keepTablesApart=xml=>xml.split("</w:tbl><w:tbl>").join("</w:tbl>"+GAP+"<w:tbl>");
+  // blank item rows after the 5th are left out when not used, so the invoice stays on one page
+  function dropBlankRows(xml,map){
+    let n=0;for(let i=1;i<=10;i++)if(map["D"+i])n=i;
+    for(let i=10;i>Math.max(5,n);i--){
+      const t=xml.indexOf("{{D"+i+"}}");if(t<0)continue;
+      const a=Math.max(xml.lastIndexOf("<w:tr>",t),xml.lastIndexOf("<w:tr ",t)),b=xml.indexOf("</w:tr>",t);
+      if(a<0||b<0||xml.slice(a,b).indexOf("<w:tbl>")>=0)continue;
+      xml=xml.slice(0,a)+xml.slice(b+7);
+    }
+    return xml;
+  }
+  function fillXml(xml,map){ return keepTablesApart(dropBlankRows(xml,map).replace(/\{\{([A-Z_0-9]+)\}\}/g,(m,k)=>k in map?esc(map[k]):"")); }
 
   function financialYear(iso){
     const d=iso?new Date(iso+"T00:00:00"):new Date(); const y=d.getFullYear(), m=d.getMonth();
@@ -576,7 +590,10 @@ nav.tabs a[aria-current="page"]{color:var(--accent);border-top-color:var(--accen
     return {map,totals:t};
   }
   const esc=s=>String(s).replace(/&/g,"&amp;").replace(/[<]/g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-  const fillXml=(xml,map)=>xml.replace(/\{\{([A-Z_0-9]+)\}\}/g,(m,k)=>k in map?esc(map[k]):"");
+  // Google Docs (used to make the PDF) joins two tables that touch into one; a hair-thin empty line keeps them apart.
+  const GAP='<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr></w:p>';
+  const keepTablesApart=xml=>xml.split("</w:tbl><w:tbl>").join("</w:tbl>"+GAP+"<w:tbl>");
+  const fillXml=(xml,map)=>keepTablesApart(xml.replace(/\{\{([A-Z_0-9]+)\}\}/g,(m,k)=>k in map?esc(map[k]):""));
   function financialYear(iso){const d=iso?new Date(iso+"T00:00:00"):new Date();const y=d.getFullYear(),m=d.getMonth();const s=m>=3?y:y-1;return `${s}-${String((s+1)%100).padStart(2,"0")}`}
   async function buildDocx(JSZip,buf,q){
     const zip=await JSZip.loadAsync(buf); const {map,totals}=tokens(q);
@@ -890,7 +907,13 @@ function bReset(example){
 }
 $("#b-blank").onclick=()=>bReset(false);
 async function bDownload(order,st){const {blob}=await P.buildDocx(JSZip,await tpl("invoice"),order,{...firm,...(st||{})});
-  return saveFile(`Invoice ${order.invNo.split("/").join("-")} ${(order.buyer.name||"").replace(/[^\w\s&.-]/g,"").slice(0,40).trim()}.docx`,blob)}
+  return savePdf(`Invoice ${order.invNo.split("/").join("-")} ${(order.buyer.name||"").replace(/[^\w\s&.-]/g,"").slice(0,40).trim()}`,blob)}
+let pdfFailed=false;
+async function savePdf(name,docx){
+  pdfFailed=false;
+  try{const pdf=await api("makePdf",await blobToB64(docx),name);
+    return saveFile(name+".pdf",new Blob([Uint8Array.from(atob(pdf),c=>c.charCodeAt(0))],{type:"application/pdf"}))}
+  catch(e){if(/WRONG_PIN|LOCKED/.test(pinErr(e)))throw e;pdfFailed=true;toast("Couldn't make the PDF, so the Word file was saved instead.");return saveFile(name+".docx",docx)}}
 function err(id,m){$(id).textContent=m||"";$(id).hidden=!m}
 $("#b-create").onclick=async()=>{
   if(bBusy)return;err("#b-err");const o=bRead(),t=P.compute(o,firm);
@@ -908,7 +931,7 @@ $("#b-create").onclick=async()=>{
       if(r.error)return err("#b-err",r.error);
       invoices=[rec,...invoices.filter(x=>x.invNo!==rec.invNo)];if(!bExample&&o.buyer&&o.buyer.name)customers[slug(o.buyer.name)]=o.buyer;
       applyState(localState());setTimeout(refresh,500)}
-    const ok=await bDownload(o);toast(ok?`Invoice ${o.invNo} saved and downloaded`:`Invoice ${o.invNo} saved`);bNumTouched=false;
+    btn.textContent="Making PDF…";const ok=await bDownload(o);toast(ok?`Invoice ${o.invNo} saved and downloaded`+(pdfFailed?" as a Word file (couldn't make the PDF)":""):`Invoice ${o.invNo} saved`);bNumTouched=false;
   }catch(e){err("#b-err",e?.code==="invalid_argument"?"You can view invoices but not create them. Ask the owner for Contributor access.":"Couldn't create the invoice. Check the internet and try again.")}
   finally{bBusy=false;btn.disabled=false;btn.textContent="Create invoice"}
 };
@@ -951,7 +974,7 @@ function qReset(example){
 }
 $("#q-blank").onclick=()=>qReset(false);
 async function qDownload(q){const {blob}=await Q.buildDocx(JSZip,await tpl("quote"),q);
-  return saveFile(`Quotation ${q.qtNo.split("/").join("-")} ${(q.client.company||q.client.name||"").replace(/[^\w\s&.-]/g,"").slice(0,40).trim()}.docx`,blob)}
+  return savePdf(`Quotation ${q.qtNo.split("/").join("-")} ${(q.client.company||q.client.name||"").replace(/[^\w\s&.-]/g,"").slice(0,40).trim()}`,blob)}
 $("#q-create").onclick=async()=>{
   if(qBusy)return;err("#q-err");const q=qRead(),t=Q.compute(q);
   if(!q.client.name)return err("#q-err","Enter the client's name.");
@@ -967,7 +990,7 @@ $("#q-create").onclick=async()=>{
       if(r.error)return err("#q-err",r.error);
       quotes=[rec,...quotes.filter(x=>x.qtNo!==rec.qtNo)];if(!qExample&&q.client&&q.client.name)clients[slug(q.client.name)]=q.client;
       applyState(localState());setTimeout(refresh,500)}
-    const ok=await qDownload(q);toast(ok?`Quotation ${q.qtNo} saved and downloaded`:`Quotation ${q.qtNo} saved`);qNumTouched=false;
+    btn.textContent="Making PDF…";const ok=await qDownload(q);toast(ok?`Quotation ${q.qtNo} saved and downloaded`+(pdfFailed?" as a Word file (couldn't make the PDF)":""):`Quotation ${q.qtNo} saved`);qNumTouched=false;
   }catch(e){err("#q-err",e?.code==="invalid_argument"?"You can view quotations but not create them. Ask the owner for Contributor access.":"Couldn't create the quotation. Check the internet and try again.")}
   finally{qBusy=false;btn.disabled=false;btn.textContent="Create quotation"}
 };
