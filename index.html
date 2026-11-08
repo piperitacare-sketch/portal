@@ -40,7 +40,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .tqty button[data-tq="0"]{font-size:14px;font-weight:600}
 .tl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .tl li{display:flex;align-items:center;gap:8px;background:var(--soft);border-radius:10px;padding:8px 10px}
-.tl li .n{flex:1}.tload .seg button{font-size:14px;padding:9px 4px;min-width:0}.tl li button{width:36px;height:36px;border-radius:9px;background:var(--surface);border:1px solid var(--line);font-weight:700}
+.tl li .n{flex:1}.tload .seg button{font-size:14px;padding:9px 4px;min-width:0}
+.tload .raw,.tload .qs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.tload .qs{grid-template-columns:repeat(4,minmax(0,1fr))}.tload .qs button{flex:none;min-width:0;padding:10px 0;font-size:14px}.tload .raw button{flex:none;min-width:0;padding:10px 2px;font-size:14px;overflow-wrap:anywhere}.tl li button{width:36px;height:36px;border-radius:9px;background:var(--surface);border:1px solid var(--line);font-weight:700}
 label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);font-weight:500;min-width:0}
 input,select{font:inherit;font-size:16px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 11px;width:100%;min-width:0;box-sizing:border-box}
 .check{display:flex;align-items:center;gap:8px;font-size:15px}
@@ -1039,10 +1040,10 @@ function renderLoad(){
   const {grp,sel}=tCur(),qs=[1,5,10,50].map(k=>r2(sel.step*k));
   $("#t-load").innerHTML=`<h3>What's on the truck? · ट्रक में क्या है?</h3>
     <div class="tgrid">${T_GROUPS.filter(x=>x.ms[0].block).map(x=>`<button type="button" class="tile" data-tk="${x.g}" aria-pressed="${x===grp}">${shape(x.ms[0].block,x===grp&&sel.col?sel.col:"Grey")}<span class="tn">${x.ms[0].en.split(" – ")[0].replace(" 8×8 in","")}</span></button>`).join("")}</div>
-    <div class="seg">${T_GROUPS.filter(x=>!x.ms[0].block).map(x=>`<button type="button" data-tk="${x.g}" aria-pressed="${x===grp}">${x.g==="colour"?"Colour":x.ms[0].en}</button>`).join("")}</div>
+    <div class="seg raw">${T_GROUPS.filter(x=>!x.ms[0].block).map(x=>`<button type="button" data-tk="${x.g}" aria-pressed="${x===grp}">${x.g==="colour"?"Colour":x.ms[0].en}</button>`).join("")}</div>
     ${grp.ms.length>1?`<div class="seg">${grp.ms.map(m=>`<button type="button" data-ts="${tVar(m)}" aria-pressed="${m===sel}">${sw(m.col)}${tVar(m)}</button>`).join("")}</div>`:""}
     <div class="tqty"><button type="button" data-tq="-" aria-label="Less">−</button><b>${fmt(tQty)}<span>${sel.unit}</span></b><button type="button" data-tq="0">Clear</button></div>
-    <div class="seg">${qs.map(q=>`<button type="button" data-tq="${q}">+${fmt(q)}</button>`).join("")}</div>
+    <div class="seg qs">${qs.map(q=>`<button type="button" data-tq="${q}">+${fmt(q)}</button>`).join("")}</div>
     <button class="soft" type="button" data-tadd ${tQty>0?"":"disabled"}>${tQty>0?`Add ${fmt(tQty)} ${sel.unit} ${esc(sel.en)}`:"Pick the quantity, then add"}</button>
     ${tLoad.length?`<ul class="tl">${tLoad.map((l,i)=>{const m=matById[l.id];return `<li>${sw(m.col)}<span class="n">${esc(m.en)}</span><b>${fmt(l.qty)} ${m.unit}</b><button type="button" data-trm="${i}" aria-label="Remove ${esc(m.en)}">✕</button></li>`}).join("")}</ul>`:""}`;
 }
