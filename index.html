@@ -35,7 +35,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .tload{display:flex;flex-direction:column;gap:10px;border:1px solid var(--line);border-radius:14px;padding:12px}
 .tload h3{margin:0;font-size:15px}
 .tqty{display:grid;grid-template-columns:56px 1fr 72px;gap:8px;align-items:center}
-.tqty b{font-size:30px;text-align:center;font-family:var(--f-display)}.tqty b span{font-size:15px;color:var(--muted);margin-left:4px}
+.tqin{display:flex;align-items:center;gap:6px;min-width:0}.tqin input{width:100%;min-width:0;font-size:28px;font-weight:700;text-align:center;font-family:var(--f-display);padding:6px 4px}.tqin span{font-size:15px;color:var(--muted)}
 .tqty button{min-height:48px;border-radius:10px;background:var(--bg);border:1px solid var(--line);font-size:20px;font-weight:700}
 .tqty button[data-tq="0"]{font-size:14px;font-weight:600}
 .tl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
@@ -330,6 +330,7 @@ nav.tabs a[aria-current="page"]{color:var(--accent);border-top-color:var(--accen
           <label class="f" for="t-driver">Driver name<input id="t-driver" autocomplete="off"></label>
           <label class="f full" for="t-phone">Driver mobile number<input id="t-phone" type="tel" inputmode="tel" maxlength="14" placeholder="98260 00000"></label>
           <label class="f full" for="t-by">Your name · आपका नाम<input id="t-by" autocomplete="name"></label>
+          <label class="f full" for="t-note">Extra note (optional)<input id="t-note" placeholder="e.g. 20 broken pieces, came late"></label>
         </div>
         <div class="err" id="t-err" hidden></div>
         <button class="primary" type="button" id="t-save">Save truck check</button>
@@ -1042,7 +1043,7 @@ function renderLoad(){
     <div class="tgrid">${T_GROUPS.filter(x=>x.ms[0].block).map(x=>`<button type="button" class="tile" data-tk="${x.g}" aria-pressed="${x===grp}">${shape(x.ms[0].block,x===grp&&sel.col?sel.col:"Grey")}<span class="tn">${x.ms[0].en.split(" – ")[0].replace(" 8×8 in","")}</span></button>`).join("")}</div>
     <div class="seg raw">${T_GROUPS.filter(x=>!x.ms[0].block).map(x=>`<button type="button" data-tk="${x.g}" aria-pressed="${x===grp}">${x.g==="colour"?"Colour":x.ms[0].en}</button>`).join("")}</div>
     ${grp.ms.length>1?`<div class="seg">${grp.ms.map(m=>`<button type="button" data-ts="${tVar(m)}" aria-pressed="${m===sel}">${sw(m.col)}${tVar(m)}</button>`).join("")}</div>`:""}
-    <div class="tqty"><button type="button" data-tq="-" aria-label="Less">−</button><b>${fmt(tQty)}<span>${sel.unit}</span></b><button type="button" data-tq="0">Clear</button></div>
+    <div class="tqty"><button type="button" data-tq="-" aria-label="Less">−</button><label class="tqin" for="t-qty"><input id="t-qty" type="number" inputmode="decimal" min="0" step="any" value="${tQty||""}" placeholder="0" aria-label="Quantity in ${sel.unit}"><span>${sel.unit}</span></label><button type="button" data-tq="0">Clear</button></div>
     <div class="seg qs">${qs.map(q=>`<button type="button" data-tq="${q}">+${fmt(q)}</button>`).join("")}</div>
     <button class="soft" type="button" data-tadd ${tQty>0?"":"disabled"}>${tQty>0?`Add ${fmt(tQty)} ${sel.unit} ${esc(sel.en)}`:"Pick the quantity, then add"}</button>
     ${tLoad.length?`<ul class="tl">${tLoad.map((l,i)=>{const m=matById[l.id];return `<li>${sw(m.col)}<span class="n">${esc(m.en)}</span><b>${fmt(l.qty)} ${m.unit}</b><button type="button" data-trm="${i}" aria-label="Remove ${esc(m.en)}">✕</button></li>`}).join("")}</ul>`:""}`;
@@ -1059,6 +1060,10 @@ $("#t-load").addEventListener("click",e=>{const b=e.target.closest("button");if(
   else if(b.dataset.trm!=null)tLoad.splice(+b.dataset.trm,1);
   else return;
   renderLoad()});
+// the quantity can also be typed
+function tAddLabel(){const {sel}=tCur(),b=$("#t-load [data-tadd]");if(!b)return;b.disabled=!(tQty>0);b.textContent=tQty>0?`Add ${fmt(tQty)} ${sel.unit} ${sel.en}`:"Pick the quantity, then add"}
+$("#t-load").addEventListener("input",e=>{if(e.target.id!=="t-qty")return;const v=parseFloat(e.target.value);tQty=isFinite(v)&&v>0?r2(v):0;tAddLabel()});
+$("#t-load").addEventListener("keydown",e=>{if(e.target.id==="t-qty"&&e.key==="Enter"){e.preventDefault();if(tAddCurrent()){renderLoad();toast("Added to the list")}}});
 renderLoad();
 $("#t-photo").addEventListener("change",e=>{tFile=e.target.files[0]||null;const im=$("#t-prev");
   if(tFile){im.src=URL.createObjectURL(tFile);im.hidden=false;$("#t-ph").hidden=true}else{im.hidden=true;$("#t-ph").hidden=false}});
@@ -1071,7 +1076,7 @@ async function storeTruck(rec,full,thumb){
 $("#t-save").onclick=async()=>{
   if(tBusy)return;err("#t-err");
   if(tQty>0){tAddCurrent();renderLoad()}
-  const rec={dir:tDir,truck:$("#t-truck").value.trim().toUpperCase(),driver:$("#t-driver").value.trim(),phone:$("#t-phone").value.replace(/[^\d+]/g,""),by:$("#t-by").value.trim(),note:tLoad.map(tLine).join(", "),items:tLoad.map(l=>({...l})),at:Date.now()};
+  const rec={dir:tDir,truck:$("#t-truck").value.trim().toUpperCase(),driver:$("#t-driver").value.trim(),phone:$("#t-phone").value.replace(/[^\d+]/g,""),by:$("#t-by").value.trim(),note:tLoad.map(tLine).join(", ")+($("#t-note").value.trim()?" · Note: "+$("#t-note").value.trim():""),items:tLoad.map(l=>({...l})),at:Date.now()};
   if(!tFile)return err("#t-err","Take a photo of the loaded material first.");
   if(!tLoad.length)return err("#t-err","Pick what is on the truck and how much, then tap Add.");
   if(!rec.truck)return err("#t-err","Enter the truck number.");
@@ -1086,7 +1091,7 @@ $("#t-save").onclick=async()=>{
     if(thumb.size>30000)thumb=await shrink(tFile,180,0.6);
     await storeTruck(rec,full,thumb);
     try{localStorage.setItem("pc-name",rec.by)}catch(e){}
-    tFile=null;$("#t-photo").value="";$("#t-prev").hidden=true;$("#t-ph").hidden=false;["t-truck","t-driver","t-phone"].forEach(id=>$("#"+id).value="");tLoad=[];tQty=0;renderLoad();
+    tFile=null;$("#t-photo").value="";$("#t-prev").hidden=true;$("#t-ph").hidden=false;["t-truck","t-driver","t-phone","t-note"].forEach(id=>$("#"+id).value="");tLoad=[];tQty=0;renderLoad();
     toast(`Truck ${rec.truck} saved`);
   }catch(e){err("#t-err",e?.code==="invalid_argument"?"You can view truck checks but not add them. Ask the owner for Contributor access.":"Couldn't save. Check the internet and try again.")}
   finally{tBusy=false;btn.disabled=false;btn.textContent="Save truck check"}
