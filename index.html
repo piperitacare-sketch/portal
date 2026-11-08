@@ -644,7 +644,7 @@ function tpl(k){
     return b64buf(b64)})().catch(e=>{delete TPL[k];throw e});
   return TPL[k].then(b=>b.slice(0))}
 const TYPES=["Zig-Zag","Cosmic","Square","Kerb Stone"];
-const THICK=["60","80","100"],GRADES=["M30","M35","M40"],COLOURS=["Red","Yellow","Grey"];
+const THICK=["60","80","100"],KERB=["75","100","150"],GRADES=["M30","M35","M40"],COLOURS=["Red","Yellow","Grey"];
 const COLOUR_HEX={Red:"#B03A2E",Yellow:"#E0A800",Grey:"#8A8D8F"};
 const SHAPE_PAL={Grey:["#CDCEC9","#A7A8A3","#6F706B"],Red:["#D98A76","#B5523F","#7A3022"],Yellow:["#EFCB76","#D6A535","#94701A"]};
 const SHAPE_PATH={
@@ -699,9 +699,10 @@ const MATS=[
   // finished paver blocks: every type in every colour
   ...[{key:"zigzag",type:"Zig-Zag",en:"Zig-Zag",hi:"ज़िग-ज़ैग",step:100,low:500},
       {key:"cosmic",type:"Cosmic",en:"Cosmic",hi:"कॉस्मिक",step:100,low:500},
-      {key:"square",type:"Square",en:"Square 8×8 in",hi:"स्क्वायर",step:100,low:500},
-      {key:"kerb",type:"Kerb Stone",en:"Kerb Stone",hi:"कर्ब स्टोन",step:10,low:50}]
-    .flatMap(t=>["Red","Yellow","Grey"].map(c=>({id:`block_${t.key}_${c.toLowerCase()}`,en:`${t.en} – ${c}`,hi:t.hi,unit:"Nos",step:t.step,low:t.low,block:t.type,bkey:t.key,col:c}))),
+      {key:"square",type:"Square",en:"Square 8×8 in",hi:"स्क्वायर",step:100,low:500}]
+    .flatMap(t=>["Red","Yellow","Grey"].map(c=>({id:`block_${t.key}_${c.toLowerCase()}`,en:`${t.en} – ${c}`,hi:t.hi,unit:"Nos",step:t.step,low:t.low,block:t.type,bkey:t.key,col:c,sub:c}))),
+  // kerb stone: one colour, three sizes
+  ...KERB.map(z=>({id:`block_kerb_${z}`,en:`Kerb Stone – ${z} mm`,hi:"कर्ब स्टोन",unit:"Nos",step:10,low:50,block:"Kerb Stone",bkey:"kerb",sub:`${z} mm`})),
   {id:"cement",en:"Cement",hi:"सीमेंट",unit:"bags",step:1,low:20},
   {id:"gitti",en:"Gitti",hi:"गिट्टी",unit:"cft",step:5,low:100},
   {id:"baalu",en:"Baalu",hi:"बालू",unit:"cft",step:5,low:100},
@@ -740,10 +741,10 @@ function renderStock(){
   const types=[...new Set(MATS.filter(m=>m.block).map(m=>m.bkey))];
   const tiles=types.map(k=>{const ms=MATS.filter(m=>m.bkey===k),any=ms.some(m=>stock[m.id]),tot=ms.reduce((a,m)=>a+qty(m.id),0),low=ms.some(m=>stock[m.id]&&qty(m.id)<=lowAt(m.id));
     return `<button type="button" class="tile${low?" low":""}" data-sel="${k}" aria-pressed="${k===selType}">${shape(ms[0].block)}<span class="tn">${ms[0].en.split(" – ")[0]}</span><span class="tq">${any?fmt(tot):"—"}<span>Nos</span></span>
-      <span class="tc">${ms.map(m=>`<span>${sw(m.col)}${stock[m.id]?fmt(qty(m.id)):"—"}</span>`).join("")}</span></button>`}).join("");
+      <span class="tc">${ms.map(m=>`<span>${m.col?sw(m.col):`<small>${m.sub.replace(" mm","")}:</small> `}${stock[m.id]?fmt(qty(m.id)):"—"}</span>`).join("")}</span></button>`}).join("");
   const cur=MATS.filter(m=>m.bkey===selType);
-  const chips=`<div class="seg">${cur.map(m=>`<button type="button" data-selc="${m.col}" aria-pressed="${m.col===selCol}">${sw(m.col)}${m.col}</button>`).join("")}</div>`;
-  const sel=cur.find(m=>m.col===selCol)||cur[0];
+  const sel=cur.find(m=>m.sub===selCol)||cur[0];
+  const chips=`<div class="seg">${cur.map(m=>`<button type="button" data-selc="${m.sub}" aria-pressed="${m===sel}">${sw(m.col)}${m.sub}</button>`).join("")}</div>`;
   $("#s-cards").innerHTML=`<h3>Paver blocks · ब्लॉक</h3><div class="bgrid">${tiles}</div>${chips}${matCard(sel)}<h3>Raw material · कच्चा माल</h3>${raws.map(matCard).join("")}`;
 }
 function kindLabel(e){const blk=matById[e.item]?.block;return e.kind==="count"?"Corrected":e.change<0?(blk?"Dispatched":"Used"):(blk?"Made":"Received")}
@@ -822,8 +823,8 @@ function itemEditor(box,list,opts){
     box.innerHTML=list().map((it,i)=>`<div class="item" data-i="${i}">
       <div class="item-top"><b>Item ${i+1}</b>${list().length>1?`<button class="rm" type="button" data-act="rm">Remove</button>`:""}</div>
       <div><div class="small" style="margin-bottom:6px">Type</div><div class="tgrid">${TYPES.map(t=>`<button type="button" class="tile" data-act="type" data-v="${t}" aria-pressed="${it.type===t}">${shape(t,it.colour)}<span class="tn">${t==="Square"?"Square 8×8\"":t}</span></button>`).join("")}</div></div>
-      <div class="seg" role="group" aria-label="Colour">${COLOURS.map(c=>`<button type="button" data-act="col" data-v="${c}" aria-pressed="${it.colour===c}">${sw(c)}${c}</button>`).join("")}</div>
-      <div class="seg">${THICK.map(t=>`<button type="button" data-act="th" data-v="${t}" aria-pressed="${it.thickness===t}">${t} mm</button>`).join("")}</div>
+      ${it.type==="Kerb Stone"?"":`<div class="seg" role="group" aria-label="Colour">${COLOURS.map(c=>`<button type="button" data-act="col" data-v="${c}" aria-pressed="${it.colour===c}">${sw(c)}${c}</button>`).join("")}</div>`}
+      <div class="seg" role="group" aria-label="${it.type==="Kerb Stone"?"Size":"Thickness"}">${(it.type==="Kerb Stone"?KERB:THICK).map(t=>`<button type="button" data-act="th" data-v="${t}" aria-pressed="${it.thickness===t}">${t} mm</button>`).join("")}</div>
       ${opts.grade?`<div class="seg">${GRADES.map(t=>`<button type="button" data-act="gr" data-v="${t}" aria-pressed="${it.grade===t}">${t}</button>`).join("")}</div>`:""}
       <div class="step"><button type="button" data-act="dec" aria-label="Less">−</button><input id="${pre}-qty-${i}" data-k="qty" type="number" inputmode="numeric" min="0" value="${it.qty}" placeholder="Qty" aria-label="Quantity"><button type="button" data-act="inc" aria-label="More">+</button></div>
       <div class="grid">
@@ -839,7 +840,9 @@ function itemEditor(box,list,opts){
     else if(a==="th")it.thickness=it.thickness===b.dataset.v?"":b.dataset.v;
     else if(a==="gr")it.grade=it.grade===b.dataset.v?"":b.dataset.v;
     else if(a==="col")it.colour=b.dataset.v;
-    else if(a==="type")it.type=b.dataset.v;
+    else if(a==="type"){it.type=b.dataset.v;
+      if(it.type==="Kerb Stone"){it.colour="";if(!KERB.includes(it.thickness))it.thickness="100"}
+      else{if(!it.colour)it.colour="Grey";if(!THICK.includes(it.thickness))it.thickness="60"}}
     else if(a==="inc"||a==="dec")it.qty=Math.max(0,(+it.qty||0)+(a==="inc"?100:-100));else return;
     render();opts.onChange()});
   box.addEventListener("input",e=>{const k=e.target.dataset.k;if(!k)return;const card=e.target.closest(".item"),it=list()[+card.dataset.i];it[k]=e.target.value;
