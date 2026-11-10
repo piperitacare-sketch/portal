@@ -471,7 +471,11 @@ nav.tabs a[aria-current="page"]{color:var(--accent);border-top-color:var(--accen
       CGR:t.inter?"–":String(t.rate/2),SGR:t.inter?"–":String(t.rate/2),IGR:t.inter?String(t.rate):"–",
       CGST:t.inter?"–":money(t.cgst),SGST:t.inter?"–":money(t.sgst),IGST:t.inter?money(t.igst):"–",
       FREIGHT:t.freight?money(t.freight):"–",ROUND:t.round?(t.round>0?"+":"")+money(t.round):"0.00",
-      GRAND:money(t.grand),DAYS:String(settings.days ?? "____"),INT:String(settings.interest ?? "____")
+      GRAND:money(t.grand),DAYS:String(settings.days ?? "____"),INT:String(settings.interest ?? "____"),
+      // terms & conditions (page 2)
+      T_UNIT:[...new Set(t.items.map(it=>it.unit||"Nos"))].join(" / ")||"Nos",
+      T_GST:String(t.rate),
+      T_FREIGHT:t.freight?"charged as shown above":"not included in this invoice"
     };
     for(let i=1;i<=10;i++){
       const it=t.items[i-1];
@@ -667,8 +671,8 @@ function b64buf(b64){const s=atob(b64||"");const u=new Uint8Array(s.length);for(
 const TPL={};
 function tpl(k){
   if(!TPL[k])TPL[k]=(async()=>{let b64=null;
-    try{const c=JSON.parse(localStorage.getItem("pc-tpl-"+k)||"null");if(c&&Date.now()-c.t<7*864e5)b64=c.d}catch(e){}
-    if(!b64){b64=await api("getTemplate",k);try{localStorage.setItem("pc-tpl-"+k,JSON.stringify({t:Date.now(),d:b64}))}catch(e){}}
+    try{const c=JSON.parse(localStorage.getItem("pc-tpl2-"+k)||"null");if(c&&Date.now()-c.t<7*864e5)b64=c.d}catch(e){}
+    if(!b64){b64=await api("getTemplate",k);try{localStorage.setItem("pc-tpl2-"+k,JSON.stringify({t:Date.now(),d:b64}))}catch(e){}}
     return b64buf(b64)})().catch(e=>{delete TPL[k];throw e});
   return TPL[k].then(b=>b.slice(0))}
 const TYPES=["Zig-Zag","Cosmic","Square","Kerb Stone"];
